@@ -1044,6 +1044,8 @@ public:
     bool bUseFreeType;
     bool bUseMediainfoLoadFileDuration;
     bool bPauseWhileDraggingSeekbar;
+    bool bSkipSponsorBlockChapters;
+    CString sSponsorBlockSkipMarkers;
     bool bPauseWhenMinimized;
     CStringA strOpenTypeLangHint;
 

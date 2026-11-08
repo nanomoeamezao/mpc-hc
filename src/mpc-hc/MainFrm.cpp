@@ -2504,17 +2504,22 @@ void CMainFrame::OnTimer(UINT_PTR nIDEvent)
                     case PM_FILE:
                         g_bExternalSubtitleTime = false;
                         if (m_pGB && m_pMS) {
-                            m_pMS->GetCurrentPosition(&rtNow);
+                            const auto chapterGeneration = m_chapterSkip.GetGeneration();
+                            const HRESULT positionResult = m_pMS->GetCurrentPosition(&rtNow);
                             if (!m_pGB || !m_pMS) {
                                 // can happen extremely rarely based on crash dump
                                 // no idea how, since closing of graph is initiated from this same thread
                                 ASSERT(false);
                                 return;
                             }
-                            m_pMS->GetDuration(&rtDur);
+                            const HRESULT durationResult = m_pMS->GetDuration(&rtDur);
 
                             if ((abRepeat.positionA && rtNow < abRepeat.positionA || abRepeat.positionB && rtNow >= abRepeat.positionB) && GetMediaState() != State_Stopped) {
                                 PerformABRepeat();
+                                return;
+                            }
+
+                            if (SUCCEEDED(positionResult) && SUCCEEDED(durationResult) && TrySkipChapter(rtNow, rtDur, chapterGeneration)) {
                                 return;
                             }
 
@@ -3281,7 +3286,7 @@ void CMainFrame::PerformABRepeat() {
         }
     }
 
-    DoSeekTo(abRepeat.positionA, false);
+    DoSeekTo(abRepeat.positionA, false, false);
 
     if (GetMediaState() == State_Stopped) {
         SendMessage(WM_COMMAND, ID_PLAY_PLAY);
@@ -3314,6 +3319,8 @@ bool CMainFrame::CheckABRepeat(REFERENCE_TIME& aPos, REFERENCE_TIME& bPos) {
 //
 void CMainFrame::GraphEventComplete()
 {
+    ChapterSkip::SeekScope seekScope(m_chapterSkip);
+    m_chapterSkip.ResetVisit();
     CAppSettings& s = AfxGetAppSettings();
 
     auto* pMRU = &s.MRU;
@@ -3453,6 +3460,14 @@ LRESULT CMainFrame::OnGraphNotify(WPARAM wParam, LPARAM lParam)
             case EC_STEP_COMPLETE:
                 if (m_fFrameSteppingActive) {
                     m_nStepForwardCount++;
+                    if (GetPlaybackMode() == PM_FILE) {
+                        const auto generation = m_chapterSkip.GetGeneration();
+                        const REFERENCE_TIME position = m_rtStepForwardStart
+                            + m_nStepForwardCount * std::llround(GetAvgTimePerFrame() * 10000000LL);
+                        if (generation == m_chapterSkip.GetGeneration()) {
+                            m_chapterSkip.OnManualSeek(position);
+                        }
+                    }
                 }
                 UpdateCachedMediaState();
                 break;
@@ -8914,6 +8929,7 @@ void CMainFrame::OnPlayPlay()
 
 void CMainFrame::OnPlayPause()
 {
+    m_chapterSkip.CancelPendingSkip();
     m_timerOneTime.Unsubscribe(TimerOneTimeSubscriber::DELAY_PLAYPAUSE_AFTER_AUTOCHANGE_MODE);
     m_bOpeningInAutochangedMonitorMode = false;
     m_bPausedByMinimize = false;
@@ -8987,6 +9003,8 @@ void CMainFrame::OnPlayStop()
 
 void CMainFrame::OnPlayStop(bool is_closing)
 {
+    ChapterSkip::SeekScope seekScope(m_chapterSkip);
+    m_chapterSkip.ResetVisit();
     m_timerOneTime.Unsubscribe(TimerOneTimeSubscriber::DELAY_PLAYPAUSE_AFTER_AUTOCHANGE_MODE);
     m_bOpeningInAutochangedMonitorMode = false;
     m_bPausedForAutochangeMonitorMode = false;
@@ -9149,6 +9167,8 @@ void CMainFrame::OnUpdatePlayPauseStop(CCmdUI* pCmdUI)
 
 void CMainFrame::OnPlayFramestep(UINT nID)
 {
+    ChapterSkip::SeekScope seekScope(m_chapterSkip);
+    m_chapterSkip.CancelPendingSkip();
     if (!m_pFS && !m_pMS || m_fAudioOnly || GetLoadState() != MLS::LOADED || GetPlaybackMode() != PM_FILE && GetPlaybackMode() != PM_DVD) {
         return;
     }
@@ -9230,6 +9250,13 @@ void CMainFrame::OnPlayFramestep(UINT nID)
         }
 
         DoSeekTo(rtCurPos, false);
+    }
+    if (GetPlaybackMode() == PM_FILE && m_pMS && !m_fFrameSteppingActive) {
+        const auto generation = m_chapterSkip.GetGeneration();
+        REFERENCE_TIME position = 0;
+        if (SUCCEEDED(m_pMS->GetCurrentPosition(&position)) && generation == m_chapterSkip.GetGeneration()) {
+            m_chapterSkip.OnManualSeek(position);
+        }
     }
     m_OSD.EnableShowMessage();
 }
@@ -11911,6 +11938,7 @@ bool CMainFrame::MediaControlRun(bool waitforcompletion)
 bool CMainFrame::MediaControlPause(bool waitforcompletion)
 {
     CDeferredActionScope actionScope(*this);
+    m_chapterSkip.CancelPendingSkip();
     m_dwLastPause = GetTickCount64();
     if (m_pMC) {
         m_CachedFilterState = State_Paused;
@@ -16378,6 +16406,7 @@ void CMainFrame::CloseMediaPrivate()
         m_pDVBState = nullptr;
     }
     m_pCB.Release();
+    m_chapterSkip.SetChapters({});
 
     {
         CAutoLock cAutoLock(&m_csSubLock);
@@ -19078,6 +19107,7 @@ void CMainFrame::SeekTo(REFERENCE_TIME rtPos, bool bShowOSD /*= true*/)
         ASSERT(false);
         return;
     }
+    m_chapterSkip.OnManualSeek(rtPos);
     ASSERT(lastSeekFinish >= lastSeekStart); // ToDo: remove lastSeekStart variable if no regressions show up
     ULONGLONG curTime = GetTickCount64();
     ULONGLONG ticksSinceLastSeek = curTime - lastSeekFinish;
@@ -19096,8 +19126,14 @@ void CMainFrame::SeekTo(REFERENCE_TIME rtPos, bool bShowOSD /*= true*/)
     }
 }
 
-void CMainFrame::DoSeekTo(REFERENCE_TIME rtPos, bool bShowOSD /*= true*/)
+void CMainFrame::DoSeekTo(REFERENCE_TIME rtPos, bool bShowOSD, bool bManual,
+                          std::optional<std::uint64_t> chapterSkipGeneration)
 {
+    ChapterSkip::SeekScope seekScope(m_chapterSkip);
+    if (bManual) {
+        m_chapterSkip.OnManualSeek(rtPos);
+        KillTimerDelayedSeek();
+    }
     //TRACE(_T("DoSeekTo: %lu\n"), rtPos);
 
     if (m_pMS.p == nullptr) {
@@ -19105,6 +19141,20 @@ void CMainFrame::DoSeekTo(REFERENCE_TIME rtPos, bool bShowOSD /*= true*/)
         return;
     }
     OAFilterState fs = GetMediaState();
+    const auto canApplyChapterSkip = [&]() {
+        if (!chapterSkipGeneration) {
+            return true;
+        }
+        const auto& settings = AfxGetAppSettings();
+        m_chapterSkip.SetMarkers(settings.sSponsorBlockSkipMarkers.GetString());
+        return m_chapterSkip.CanApplySkip(*chapterSkipGeneration) && !queuedSeek.seekTime
+               && fs == State_Running && settings.bSkipSponsorBlockChapters && !abRepeat
+               && !m_fFrameSteppingActive && !m_nStepForwardCount && !m_fEndOfStream;
+    };
+    if (!canApplyChapterSkip()) {
+        m_chapterSkip.CancelPendingSkip();
+        return;
+    }
 
     if (rtPos < 0) {
         rtPos = 0;
@@ -19130,8 +19180,8 @@ void CMainFrame::DoSeekTo(REFERENCE_TIME rtPos, bool bShowOSD /*= true*/)
         return;
     }
 
+    bool force_complete = false;
     if (!IsPlaybackCaptureMode()) {
-        bool force_complete = false;
         __int64 start, stop;
         m_wndSeekBar.GetRange(start, stop);
         if (rtPos > stop) {
@@ -19150,13 +19200,21 @@ void CMainFrame::DoSeekTo(REFERENCE_TIME rtPos, bool bShowOSD /*= true*/)
         if (bShowOSD) {
             m_OSD.DisplayMessage(OSD_TOPLEFT, m_wndStatusBar.GetStatusTimer(), 1500);
         }
-        if (force_complete) {
-            GraphEventComplete();
-            return;
-        }
+    }
+
+    if (!canApplyChapterSkip()) {
+        m_chapterSkip.CancelPendingSkip();
+        return;
+    }
+    if (force_complete) {
+        GraphEventComplete();
+        return;
     }
 
     if (GetPlaybackMode() == PM_FILE) {
+        if (bManual) {
+            m_chapterSkip.OnManualSeek(rtPos);
+        }
         //SleepEx(5000, False); // artificial slow seek for testing purposes
         if (FAILED(m_pMS->SetPositions(&rtPos, AM_SEEKING_AbsolutePositioning, nullptr, AM_SEEKING_NoPositioning))) {
             TRACE(_T("IMediaSeeking SetPositions failure\n"));
@@ -21358,6 +21416,7 @@ LPCTSTR CMainFrame::GetDVDAudioFormatName(const DVD_AudioAttributes& ATR) const
 
 afx_msg void CMainFrame::OnGotoSubtitle(UINT nID)
 {
+    ChapterSkip::SeekScope seekScope(m_chapterSkip);
     if (!m_pSubStreams.IsEmpty() && !IsPlaybackCaptureMode()) {
         m_rtCurSubPos = m_wndSeekBar.GetPos();
         m_lSubtitleShift = 0;
@@ -21367,6 +21426,8 @@ afx_msg void CMainFrame::OnGotoSubtitle(UINT nID)
             if (nID == ID_GOTO_PREV_SUB) {
                 OnPlayPause();
             }
+            KillTimerDelayedSeek();
+            m_chapterSkip.OnManualSeek(m_rtCurSubPos);
             m_pMS->SetPositions(&m_rtCurSubPos, AM_SEEKING_AbsolutePositioning, nullptr, AM_SEEKING_NoPositioning);
         }
     }
@@ -21374,6 +21435,7 @@ afx_msg void CMainFrame::OnGotoSubtitle(UINT nID)
 
 afx_msg void CMainFrame::OnSubresyncShiftSub(UINT nID)
 {
+    ChapterSkip::SeekScope seekScope(m_chapterSkip);
     if (m_nCurSubtitle >= 0) {
         long lShift = (nID == ID_SUBRESYNC_SHIFT_DOWN) ? -100 : 100;
         CString strSubShift;
@@ -21381,6 +21443,8 @@ afx_msg void CMainFrame::OnSubresyncShiftSub(UINT nID)
         if (m_wndSubresyncBar.ShiftSubtitle(m_nCurSubtitle, lShift, m_rtCurSubPos)) {
             m_lSubtitleShift += lShift;
             if (m_pMS) {
+                KillTimerDelayedSeek();
+                m_chapterSkip.OnManualSeek(m_rtCurSubPos);
                 m_pMS->SetPositions(&m_rtCurSubPos, AM_SEEKING_AbsolutePositioning, nullptr, AM_SEEKING_NoPositioning);
             }
         }
@@ -23022,8 +23086,39 @@ void CMainFrame::WTSUnRegisterSessionNotification()
     }
 }
 
+bool CMainFrame::TrySkipChapter(REFERENCE_TIME position, REFERENCE_TIME duration, std::uint64_t generation)
+{
+    if (queuedSeek.seekTime || lastSeekStart > lastSeekFinish) {
+        return false;
+    }
+    const auto& s = AfxGetAppSettings();
+    m_chapterSkip.SetMarkers(s.sSponsorBlockSkipMarkers.GetString());
+    const bool allowSkip = s.bSkipSponsorBlockChapters && GetMediaState() == State_Running
+                           && !m_fFrameSteppingActive && !m_nStepForwardCount && !abRepeat
+                           && !m_fEndOfStream && m_wndSeekBar.HasDuration();
+    if (const auto target = m_chapterSkip.GetSkipTarget(position, duration, allowSkip, generation)) {
+        DoSeekTo(*target, false, false, generation);
+        return true;
+    }
+    return false;
+}
+
 void CMainFrame::UpdateSeekbarChapterBag()
 {
+    std::vector<ChapterSkip::Chapter> chapters;
+    if (m_pCB) {
+        const auto count = m_pCB->ChapGetCount();
+        chapters.reserve(count);
+        for (DWORD i = 0; i < count; ++i) {
+            REFERENCE_TIME start = 0;
+            CComBSTR title;
+            if (SUCCEEDED(m_pCB->ChapGet(i, &start, &title))) {
+                chapters.push_back({start, std::wstring(title.m_str ? title.m_str : L"", title.Length())});
+            }
+        }
+    }
+    m_chapterSkip.SetChapters(std::move(chapters));
+
     const auto& s = AfxGetAppSettings();
     if (s.fShowChapters && m_pCB && m_pCB->ChapGetCount() > 0) {
         m_wndSeekBar.SetChapterBag(m_pCB);

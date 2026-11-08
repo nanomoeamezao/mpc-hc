@@ -21,6 +21,7 @@
 
 #include "stdafx.h"
 #include "AppSettings.h"
+#include "ChapterSkip.h"
 #include "CrashReporter.h"
 #include "FGFilter.h"
 #include "FakeFilterMapper2.h"
@@ -307,6 +308,8 @@ CAppSettings::CAppSettings()
     , bUseMediainfoLoadFileDuration(false)
     , bCaptureDeinterlace(false)
     , bPauseWhileDraggingSeekbar(true)
+    , bSkipSponsorBlockChapters(false)
+    , sSponsorBlockSkipMarkers(ChapterSkip::DefaultMarkers)
     , bPauseWhenMinimized(false)
     , bConfirmFileDelete(true)
     , bShowVolumePercentage(true)
@@ -1440,6 +1443,8 @@ void CAppSettings::SaveSettings(bool write_full_history /* = false */)
     pApp->WriteProfileInt(IDS_R_SETTINGS, IDS_RS_MOUSE_LEFTUP_DELAY, iMouseLeftUpDelay);
     pApp->WriteProfileInt(IDS_R_SETTINGS, IDS_RS_CAPTURE_DEINTERLACE, bCaptureDeinterlace);
     pApp->WriteProfileInt(IDS_R_SETTINGS, IDS_RS_PAUSE_WHILE_DRAGGING_SEEKBAR, bPauseWhileDraggingSeekbar);
+    pApp->WriteProfileInt(IDS_R_SETTINGS, IDS_RS_SKIP_SPONSORBLOCK_CHAPTERS, bSkipSponsorBlockChapters);
+    pApp->WriteProfileString(IDS_R_SETTINGS, IDS_RS_SPONSORBLOCK_SKIP_MARKERS, sSponsorBlockSkipMarkers);
     pApp->WriteProfileInt(IDS_R_SETTINGS, IDS_RS_PAUSE_WHEN_MINIMIZED, bPauseWhenMinimized);
     pApp->WriteProfileInt(IDS_R_SETTINGS, IDS_RS_CONFIRM_FILE_DELETE, bConfirmFileDelete);
     pApp->WriteProfileInt(IDS_R_SETTINGS, IDS_RS_SHOW_VOLUME_PERCENTAGE, bShowVolumePercentage);
@@ -1926,6 +1931,8 @@ void CAppSettings::LoadSettings()
     bUseMediainfoLoadFileDuration = !!pApp->GetProfileInt(IDS_R_SETTINGS, IDS_RS_USE_MEDIAINFO_LOAD_FILE_DURATION, FALSE);
     bCaptureDeinterlace = !!pApp->GetProfileInt(IDS_R_SETTINGS, IDS_RS_CAPTURE_DEINTERLACE, FALSE);
     bPauseWhileDraggingSeekbar = !!pApp->GetProfileInt(IDS_R_SETTINGS, IDS_RS_PAUSE_WHILE_DRAGGING_SEEKBAR, TRUE);
+    bSkipSponsorBlockChapters = !!pApp->GetProfileInt(IDS_R_SETTINGS, IDS_RS_SKIP_SPONSORBLOCK_CHAPTERS, FALSE);
+    sSponsorBlockSkipMarkers = pApp->GetProfileString(IDS_R_SETTINGS, IDS_RS_SPONSORBLOCK_SKIP_MARKERS, ChapterSkip::DefaultMarkers);
     bPauseWhenMinimized = !!pApp->GetProfileInt(IDS_R_SETTINGS, IDS_RS_PAUSE_WHEN_MINIMIZED, FALSE);
     bConfirmFileDelete = !!pApp->GetProfileInt(IDS_R_SETTINGS, IDS_RS_CONFIRM_FILE_DELETE, TRUE);
     bShowVolumePercentage = !!pApp->GetProfileInt(IDS_R_SETTINGS, IDS_RS_SHOW_VOLUME_PERCENTAGE, TRUE);

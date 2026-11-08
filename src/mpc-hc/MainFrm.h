@@ -22,6 +22,7 @@
 #pragma once
 
 #include "ChildView.h"
+#include "ChapterSkip.h"
 #include "DVBChannel.h"
 #include "DebugShadersDlg.h"
 #include "DropTarget.h"
@@ -452,6 +453,8 @@ private:
 
     // chapters (file mode)
     CComPtr<IDSMChapterBag> m_pCB;
+    ChapterSkip m_chapterSkip;
+    bool TrySkipChapter(REFERENCE_TIME position, REFERENCE_TIME duration, std::uint64_t generation);
     void SetupChapters();
     void SetupCueChapters(CString fn);
 
@@ -847,7 +850,8 @@ public:
     REFERENCE_TIME GetClosestKeyFrame(REFERENCE_TIME rtTarget, REFERENCE_TIME rtMaxForwardDiff, REFERENCE_TIME rtMaxBackwardDiff) const;
     REFERENCE_TIME GetClosestKeyFramePreview(REFERENCE_TIME rtTarget) const;
     void SeekTo(REFERENCE_TIME rt, bool bShowOSD = true);
-    void DoSeekTo(REFERENCE_TIME rt, bool bShowOSD = true);
+    void DoSeekTo(REFERENCE_TIME rt, bool bShowOSD = true, bool bManual = true,
+                  std::optional<std::uint64_t> chapterSkipGeneration = std::nullopt);
     SeekToCommand queuedSeek;
     ULONGLONG lastSeekStart;
     ULONGLONG lastSeekFinish;

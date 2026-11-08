@@ -1,0 +1,83 @@
+name: Build MPC-HC with chapter skipping
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - autoskip-sponsor
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sponsorblock-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - name: Check out source and submodules
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare build dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vsPath = & $vswhere -latest -products '*' -version '[17.0,18.0)' -requires Microsoft.Component.MSBuild Microsoft.VisualStudio.Component.VC.ATLMFC Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vsPath) { throw 'Visual Studio 2022 with C++ and MFC was not found.' }
+          "MPCHC_VS_PATH=$vsPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          $nasmVersion = '2.16.03'
+          $nasmArchive = Join-Path $env:RUNNER_TEMP 'nasm.zip'
+          $nasmRoot = Join-Path $env:RUNNER_TEMP 'nasm'
+          Invoke-WebRequest "https://www.nasm.us/pub/nasm/releasebuilds/$nasmVersion/win64/nasm-$nasmVersion-win64.zip" -OutFile $nasmArchive
+          Expand-Archive -LiteralPath $nasmArchive -DestinationPath $nasmRoot
+          $nasmPath = Join-Path $nasmRoot "nasm-$nasmVersion"
+          if (-not (Test-Path -LiteralPath (Join-Path $nasmPath 'nasm.exe'))) { throw 'NASM archive did not contain nasm.exe.' }
+          $nasmPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+          python -m pip install --disable-pip-version-check polib==1.2.0
+          if ($LASTEXITCODE -ne 0) { throw 'Installing translation tooling failed.' }
+          $pythonPath = Split-Path (Get-Command python.exe).Source
+          @(
+            '@echo off'
+            'set "MPCHC_LAV_TOOLCHAIN=MSVC"'
+            "set `"MPCHC_VS_PATH=$vsPath`""
+            "set `"MPCHC_PYTHON=$pythonPath`""
+          ) | Set-Content -LiteralPath build.user.bat -Encoding ascii
+
+      - name: Run chapter skip tests
+        shell: cmd
+        run: |
+          call "%MPCHC_VS_PATH%\Common7\Tools\VsDevCmd.bat" -no_logo -arch=x64 -host_arch=x64
+          if errorlevel 1 exit /b 1
+          call build\test-chapter-skip.cmd
+
+      - name: Build x64 Release portable package
+        shell: cmd
+        run: call build.bat x64 Release 7z Silent
+
+      - name: Upload portable player
+        uses: actions/upload-artifact@v7
+        with:
+          name: MPC-HC-SponsorBlock-x64-${{ github.run_number }}
+          path: bin/MPC-HC.*.x64.7z
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: MPC-HC-build-logs-${{ github.run_number }}
+          path: bin/logs/
+          if-no-files-found: ignore
+          retention-days: 3

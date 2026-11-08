@@ -4216,6 +4216,10 @@ BEGIN
                             "Display current A-B repeat marks in status bar."
     IDS_PPAGEADVANCED_SHOW_VIDEOINFO_STATUSBAR 
                             "Display video info (codec name, resolution) in status bar."
+    IDS_PPAGEADVANCED_SKIP_SPONSORBLOCK_CHAPTERS
+                            "Automatically skip chapters matching SponsorBlockSkipMarkers during playback. Manually seeking into a chapter lets it play for that visit. Disabled during A-B repeat."
+    IDS_PPAGEADVANCED_SPONSORBLOCK_SKIP_MARKERS
+                            "Semicolon-separated, case-sensitive chapter title prefixes to skip. Default: [SponsorBlock]: Sponsor. Example: [SponsorBlock]: Sponsor;Intro;Credits. Empty means skip nothing."
     IDS_PPAGEADVANCED_PAUSE_WHILE_DRAGGING_SEEKBAR
                             "Pause playback while dragging the seekbar."
     IDS_PPAGEADVANCED_PAUSE_WHEN_MINIMIZED
