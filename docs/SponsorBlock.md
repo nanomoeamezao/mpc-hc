@@ -38,7 +38,9 @@ The workflow is [`.github/workflows/build-sponsorblock.yml`](../.github/workflow
 
 Manual **Run workflow** becomes available when this workflow also exists on the repository's default branch. Select `autoskip-sponsor` when running it. You can also rerun an existing run from its Actions page.
 
-The job uses the standard `windows-2022` runner, Visual Studio 2022, MSVC for LAV Filters, NASM 2.16.03, and Python/polib. It runs the focused tests before building an x64 Release portable package, has a two-hour timeout, and cancels an older run when another starts on the same branch. Failed builds upload available `bin/logs` files; earlier setup failures remain visible in the Actions log. No releases are published.
+The job uses the standard `windows-2022` runner and Visual Studio 2022 for MPC-HC and LAV Filters' DirectShow components. LAV's FFmpeg uses the upstream GCC route: MSYS2 supplies the shell, make, pkg-config, and diffutils; the compiler is the MinGW-w64 GCC 15.3 r45 archive recommended by the project's compilation instructions, pinned by SHA-256. NASM 2.16.03 and Python/polib are also prepared on the runner. MSYS2 runs on Windows without WSL, and none of these dependencies need installing locally.
+
+The workflow checks tool discovery and versions, then runs the focused chapter tests before building an x64 Release portable package. It has a two-hour timeout and cancels an older run when another starts on the same branch. Failed builds upload available `bin/logs` files and FFmpeg's configure/build logs; earlier setup failures remain visible in the Actions log. No releases are published.
 
 Standard hosted runner compute is free for public repositories. Private repositories use the owner's included allowance. Artifact storage has its own allowance (GitHub Free currently includes 500 MB); the workflow uploads only the portable package and retains it for three days. See [GitHub Actions billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions) for current allowances and usage controls.
 

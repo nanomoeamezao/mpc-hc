@@ -18,6 +18,10 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 120
     steps:
+      - name: Preserve shell script line endings
+        shell: pwsh
+        run: git config --global core.autocrlf input
+
       - name: Check out source and submodules
         uses: actions/checkout@v7
         with:
@@ -25,8 +29,18 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Set up MSYS2 build tools
+        id: msys2
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
+        with:
+          msystem: MSYS
+          update: true
+          install: make pkgconf diffutils
+
       - name: Prepare build dependencies
         shell: pwsh
+        env:
+          MPCHC_MSYS: ${{ steps.msys2.outputs.msys2-location }}
         run: |
           $ErrorActionPreference = 'Stop'
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
@@ -43,16 +57,41 @@ jobs:
           if (-not (Test-Path -LiteralPath (Join-Path $nasmPath 'nasm.exe'))) { throw 'NASM archive did not contain nasm.exe.' }
           $nasmPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
+          $mingwArchive = Join-Path $env:RUNNER_TEMP 'mingw-w64-gcc-15.3-stable-r45.7z'
+          $mingwRoot = Join-Path $env:RUNNER_TEMP 'mpc-hc-mingw'
+          Invoke-WebRequest 'https://files.1f0.de/mingw/mingw-w64-gcc-15.3-stable-r45.7z' -OutFile $mingwArchive
+          $mingwHash = (Get-FileHash -LiteralPath $mingwArchive -Algorithm SHA256).Hash
+          if ($mingwHash -ne 'DED5D9E6ED87B503747665D18BD26D99CCC0988220C73482DEB444584C0A7864') { throw 'MinGW archive checksum mismatch.' }
+          & 7z.exe x $mingwArchive "-o$mingwRoot" -y
+          if ($LASTEXITCODE -ne 0) { throw 'Extracting MinGW failed.' }
+          if (-not (Test-Path -LiteralPath (Join-Path $mingwRoot 'bin\x86_64-w64-mingw32-gcc.exe'))) { throw 'MinGW archive did not contain the x64 compiler.' }
+          if (-not (Test-Path -LiteralPath (Join-Path $env:MPCHC_MSYS 'usr\bin\sh.exe'))) { throw 'MSYS2 shell was not found.' }
+
           python -m pip install --disable-pip-version-check polib==1.2.0
           if ($LASTEXITCODE -ne 0) { throw 'Installing translation tooling failed.' }
           $pythonPath = Split-Path (Get-Command python.exe).Source
           @(
             '@echo off'
-            'set "MPCHC_LAV_TOOLCHAIN=MSVC"'
+            'set "MPCHC_LAV_TOOLCHAIN=GCC"'
+            "set `"MPCHC_MSYS=$env:MPCHC_MSYS`""
+            "set `"MPCHC_MINGW32=$mingwRoot`""
+            "set `"MPCHC_MINGW64=$mingwRoot`""
+            'set "MSYSTEM=MSYS"'
+            'set "MSYS2_PATH_TYPE=inherit"'
+            'set "MPCHC_LAV_JOBS=4"'
             'set "MPCHC_WINSDK_VER=10.0.22621.0"'
             "set `"MPCHC_VS_PATH=$vsPath`""
             "set `"MPCHC_PYTHON=$pythonPath`""
           ) | Set-Content -LiteralPath build.user.bat -Encoding ascii
+
+      - name: Verify GCC build environment
+        shell: cmd
+        run: |
+          call build.user.bat
+          call common.bat :SubSetPath
+          if errorlevel 1 exit /b 1
+          sh -c "set -eu; for tool in sh make pkg-config gcc x86_64-w64-mingw32-gcc nasm; do command -v $tool; done; x86_64-w64-mingw32-gcc --version; make --version; pkg-config --version; nasm --version"
+          if errorlevel 1 exit /b 1
 
       - name: Run chapter skip tests
         shell: cmd
@@ -79,6 +118,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: MPC-HC-build-logs-${{ github.run_number }}
-          path: bin/logs/
+          path: |
+            bin/logs/
+            src/thirdparty/LAVFilters/src/bin_x64/thirdparty/ffmpeg/ffbuild/config.log
+            src/thirdparty/LAVFilters/src/bin_x64/thirdparty/ffmpeg/ffbuild/config.out
+            src/thirdparty/LAVFilters/src/bin_x64/thirdparty/ffmpeg/make.log
           if-no-files-found: ignore
           retention-days: 3

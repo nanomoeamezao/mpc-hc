@@ -56,7 +56,7 @@
 
 **Files:** Create `.github/workflows/build-sponsorblock.yml` and `docs/SponsorBlock.md`.
 
-**Interfaces:** Workflow invokes `build/test-chapter-skip.cmd` and `build.bat x64 Release 7z Silent`. Configure `MPCHC_LAV_TOOLCHAIN=MSVC`, NASM 2.16.03, and Python with polib on the runner.
+**Interfaces:** Workflow invokes `build/test-chapter-skip.cmd` and `build.bat x64 Release 7z Silent`. Configure `MPCHC_LAV_TOOLCHAIN=GCC`, MSYS2 shell tools, the SHA-256-pinned MinGW-w64 GCC 15.3 r45 archive, NASM 2.16.03, and Python with polib on the runner.
 
 - [x] Add manual dispatch and push on `autoskip-sponsor`, recursive checkout, a bounded job timeout, and concurrency cancellation.
 - [x] Configure the workflow to run tests before the player build and upload the portable archive and failure logs with three-day retention.
@@ -74,8 +74,11 @@ Implemented on `autoskip-sponsor` without staging or commits. Native Windows boo
 - Workflow YAML and its PowerShell script parse successfully. Both project XML files parse. Resource UTF-16 encoding and existing source line endings are preserved.
 - One fresh reviewer checked the working tree. Presentation-refresh and nested-manual-seek regressions were reproduced with failing tests, fixed, and passed. Frame-step exemption timing was moved to `EC_STEP_COMPLETE`; that integration was inspected, but requires the documented playback check.
 - Full MPC-HC compilation, actual GitHub Actions execution, and playback tests were not run. Final-chapter completion and exactly-once playlist advancement still require validation with the built player.
+- After switching the workflow to GCC/MSYS2, YAML and embedded PowerShell parsing passed. The downloaded GCC archive matched the pinned checksum and expected compiler paths. The generated `build.user.bat` passed quoted-path, GCC selection, SDK selection, and working-directory bootstrap checks. All 41 MSVC repair files match the upstream baseline again. This replacement workflow still needs a hosted build after the user commits and pushes it.
 
 ## Implementation decisions
+
+- The user approved switching Actions to the upstream GCC/MSYS2 route after failures caused by stale MSVC-generated FFmpeg build files. Use the compiler distribution referenced by `docs/Compilation.md`, preserve shell script line endings, and install everything on the hosted runner. Remove the MSVC-specific repairs from `src/thirdparty/LAVFilters/msvc/ffmpeg` while retaining the Windows SDK selection and build working-directory fix.
 
 - A scoped guard freezes chapter observations during DirectShow callbacks. Generation checks also reject stale position queries and obsolete automatic targets after newer manual input, pauses, or metadata changes.
 - Automatic skips use the direct seek path after giving queued user seeks priority. They cannot remain in the delayed-seek queue after Pause.
