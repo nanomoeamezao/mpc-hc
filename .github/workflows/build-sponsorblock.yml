@@ -49,6 +49,7 @@ jobs:
           @(
             '@echo off'
             'set "MPCHC_LAV_TOOLCHAIN=MSVC"'
+            'set "MPCHC_WINSDK_VER=10.0.22621.0"'
             "set `"MPCHC_VS_PATH=$vsPath`""
             "set `"MPCHC_PYTHON=$pythonPath`""
           ) | Set-Content -LiteralPath build.user.bat -Encoding ascii
