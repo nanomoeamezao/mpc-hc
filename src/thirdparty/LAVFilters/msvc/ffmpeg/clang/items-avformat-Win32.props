@@ -45,7 +45,6 @@
     <ClCompile Include="$(FFmpegSrc)libavformat\asf_tags.c"><ObjectFileName>$(IntDir)libavformat\asf_tags.obj</ObjectFileName></ClCompile>
     <ClCompile Include="$(FFmpegSrc)libavformat\asfcrypt.c"><ObjectFileName>$(IntDir)libavformat\asfcrypt.obj</ObjectFileName></ClCompile>
     <ClCompile Include="$(FFmpegSrc)libavformat\asfdec_f.c"><ObjectFileName>$(IntDir)libavformat\asfdec_f.obj</ObjectFileName></ClCompile>
-    <ClCompile Include="$(FFmpegSrc)libavformat\asfdec_o.c"><ObjectFileName>$(IntDir)libavformat\asfdec_o.obj</ObjectFileName></ClCompile>
     <ClCompile Include="$(FFmpegSrc)libavformat\assdec.c"><ObjectFileName>$(IntDir)libavformat\assdec.obj</ObjectFileName></ClCompile>
     <ClCompile Include="$(FFmpegSrc)libavformat\ast.c"><ObjectFileName>$(IntDir)libavformat\ast.obj</ObjectFileName></ClCompile>
     <ClCompile Include="$(FFmpegSrc)libavformat\astdec.c"><ObjectFileName>$(IntDir)libavformat\astdec.obj</ObjectFileName></ClCompile>
