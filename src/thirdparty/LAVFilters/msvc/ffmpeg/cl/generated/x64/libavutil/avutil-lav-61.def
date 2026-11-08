@@ -261,6 +261,12 @@ EXPORTS
     av_frame_unref
     av_free
     av_freep
+    av_gain_map_channels_identical
+    av_gain_map_params_alloc
+    av_gain_map_params_create_side_data
+    av_gain_map_params_from_iso21496
+    av_gain_map_params_to_iso21496
+    av_gain_map_params_validate
     av_gcd
     av_gcd_q
     av_get_alt_sample_fmt
