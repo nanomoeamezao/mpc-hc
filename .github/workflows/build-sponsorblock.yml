@@ -101,8 +101,22 @@ jobs:
           call build\test-chapter-skip.cmd
 
       - name: Build x64 Release portable package
-        shell: cmd
-        run: call build.bat x64 Release 7z Silent
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $toolPaths = 'git.exe', 'nasm.exe', 'python.exe', '7z.exe' | ForEach-Object {
+            Split-Path (Get-Command $_ -CommandType Application -ErrorAction Stop).Source
+          }
+          $windowsPaths = @(
+            "$env:SystemRoot\System32"
+            "$env:SystemRoot"
+            "$env:SystemRoot\System32\Wbem"
+            "$env:SystemRoot\System32\WindowsPowerShell\v1.0"
+          )
+          $env:PATH = (($toolPaths + $windowsPaths) | Select-Object -Unique) -join ';'
+          Write-Host "Build PATH length: $($env:PATH.Length)"
+          & $env:ComSpec /d /c 'call build.bat x64 Release 7z Silent'
+          exit $LASTEXITCODE
 
       - name: Upload portable player
         uses: actions/upload-artifact@v7
